@@ -67,7 +67,7 @@ tlm::tlm_sync_enum AdapterImpl<INPUT_BUSWIDTH, OUTPUT_BUSWIDTH, INPT, OUTPT>::nb
     };
     status = initiator_socket->nb_transport_fw(trans, phase, delay);
     SCCDEBUG("Adapter") << name() << " phase " // << report::printAXI(phase)
-                       << " status " << report::print(status) << " transaction " << report::print(trans) << " got now "
+			<< " status " << " transaction " << " got now "
                        << _outstanding_trans_counter << " outstanding transactions ";
     if(_doJournalTracing)
         journalTrace("nb_transport_fw", trans, phase);
@@ -85,7 +85,7 @@ tlm::tlm_sync_enum AdapterImpl<INPUT_BUSWIDTH, OUTPUT_BUSWIDTH, INPT, OUTPT>::nb
         _outstanding_trans_counter--;
     };
     SCCDEBUG("Adapter") << name() << " phase " // << report::printAXI(phase)
-                       << " status " << report::print(status) << " transaction " << report::print(trans) << " got now "
+                       << " status " << " transaction " << " got now "
                        << _outstanding_trans_counter << " outstanding transactions";
     if(_doJournalTracing)
         journalTrace("nb_transport_bw", trans, phase);
@@ -147,7 +147,7 @@ void AdapterImpl<INPUT_BUSWIDTH, OUTPUT_BUSWIDTH, INPT, OUTPT>::b_transport(payl
     // trace_transaction(trans, phase, status, false);
 
     // trans.set_address( address_prev );
-    SCCDEBUG("Adapter") << " got " << report::print(trans);
+    SCCDEBUG("Adapter") << " got " ;
     //<< " duration " << (end_time-start_time);
     if(_doJournalTracing)
         journalTrace("b_transport", trans);
@@ -168,7 +168,7 @@ bool AdapterImpl<INPUT_BUSWIDTH, OUTPUT_BUSWIDTH, INPT, OUTPT>::get_direct_mem_p
     // dmi_data.set_end_address  ( dmi_data.get_end_address()   - _addressOffset);
 
     // trans.set_address( address_prev );
-    SCCDEBUG("Adapter") << " got DMI access " << report::print(trans);
+    SCCDEBUG("Adapter") << " got DMI access " ;
     if(_doJournalTracing)
         journalTrace("DMI", trans);
     return status;
@@ -210,7 +210,7 @@ unsigned int AdapterImpl<INPUT_BUSWIDTH, OUTPUT_BUSWIDTH, INPT, OUTPT>::transpor
     };
 
     // trans.set_address( address_prev );
-    SCCDEBUG("Adapter") << "got " << report::print(trans);
+    SCCDEBUG("Adapter") << "got ";
     if(_doJournalTracing)
         journalTrace("transport_dbg", trans);
     return count;

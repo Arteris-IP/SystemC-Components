@@ -15,10 +15,10 @@
 //
 // ------------------------------------------------------------------------------
 #pragma once
-#include <AXIreport.h>
-#include <TLM2report.h>
+//#include <AXIreport.h>
+//#include <TLM2report.h>
 #include <axi/axi_tlm.h>
-#include <common_defs.h>
+//#include <common_defs.h>
 #include <scc/report.h>
 #include <systemc.h>
 #include <tlm.h>
@@ -273,8 +273,7 @@ public:
 
     virtual void printInfo(const payload_type& trans, const phase_type& phase, const tlm::tlm_sync_enum& status,
                            unsigned int trans_counter = 0) {
-        SCCDEBUG("Adapter") << name() << " phase " << report::print(phase) << " status "
-                           << report::print(status)
+        SCCDEBUG("Adapter") << name() << " phase " << " status "
                            // << " transaction "  << report::print(trans)
                            << " got now " << trans_counter << " outstanding transactions ";
     };
@@ -289,17 +288,17 @@ public:
         // SC_TRACE_VAR(_ID);
         // SC_TRACE_VAR(_doWidthConversion);
         // SC_TRACE_VAR(_doPTTracing);
-        SC_TRACE_VAR(_convertLT2DBG);
-        SC_TRACE_VAR(_convertDBG2LT);
-        SC_TRACE_VAR(_convertLT2AT);
+        //SC_TRACE_VAR(_convertLT2DBG);
+        //SC_TRACE_VAR(_convertDBG2LT);
+        //SC_TRACE_VAR(_convertLT2AT);
         // SC_TRACE_VAR(_fixeStreamingWidth);
-        SC_TRACE_VAR(_max_outstanding_trans);
+        //SC_TRACE_VAR(_max_outstanding_trans);
         // SC_TRACE_ATT(_convert_CMD_IOSF2TLM);
-        SC_TRACE_VAR(_b_transport_count);
-        SC_TRACE_VAR(_transport_dbg_count);
-        SC_TRACE_VAR(_nb_transport_count);
-        SC_TRACE_VAR(_outstanding_trans_counter);
-        SC_TRACE_VAR(_dmi_count);
+        //SC_TRACE_VAR(_b_transport_count);
+        //SC_TRACE_VAR(_transport_dbg_count);
+        //SC_TRACE_VAR(_nb_transport_count);
+        //SC_TRACE_VAR(_outstanding_trans_counter);
+        //SC_TRACE_VAR(_dmi_count);
         // SC_TRACE_VAR(_TransID);
         // SC_TRACE_VAR(_RecordID);
         // SC_TRACE_VAR(start_time);

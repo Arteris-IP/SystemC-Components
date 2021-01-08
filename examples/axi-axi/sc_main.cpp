@@ -99,7 +99,7 @@ public:
 	rst.write(false);
 	SCCDEBUG("testbench") << " out of reset";
 	wait(ClockPeriodNS, SC_NS);
-	for(auto i=1; i<NumberOfIterations; ++i) {
+	for(auto i=1; i<=NumberOfIterations; ++i) {
 	  SCCDEBUG("testbench") << "executing transactions in iteration " << i;
 	  auto trans = prepare_trans(i);
 	  trans->acquire();

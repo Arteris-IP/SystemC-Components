@@ -16,7 +16,7 @@ find_library(TCMALLOC_LIB NAMES libtcmalloc.so)
 project (${APP_NAME})
 link_directories(${SCV_LIBRARY_DIRS} ${SystemC_LIBRARY_DIRS})
 
-add_executable(${APP_NAME} Adapter.cpp sc_main.cpp AXIreport.cpp Target_axi.cpp TLM2report.cpp)
+add_executable(${APP_NAME} Adapter.cpp sc_main.cpp)
 
 target_link_libraries (${APP_NAME} LINK_PUBLIC tlm2-interfaces)
 target_link_libraries (${APP_NAME} LINK_PUBLIC ${Boost_LIBRARIES} )
