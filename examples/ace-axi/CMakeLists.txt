@@ -1,6 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
-
-set(APP_NAME ace_ace_test)
+set(APP_NAME ace_scc_test)
 
 set(Boost_NO_BOOST_CMAKE ON) #  Don't do a find_package in config mode before searching for a regular boost install.
 set(Boost_USE_STATIC_LIBS OFF) 

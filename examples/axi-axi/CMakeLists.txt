@@ -1,6 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
-
-set(APP_NAME axi_axi_test)
+set(APP_NAME axi_scc_test)
 option(HAS_PCT "Enable Platform Architect" OFF)
 
 if(HAS_PCT)
