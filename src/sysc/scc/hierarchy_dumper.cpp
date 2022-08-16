@@ -31,6 +31,16 @@
 #include <rapidjson/ostreamwrapper.h>
 #include <rapidjson/prettywriter.h>
 #include <fmt/format.h>
+#include <scc/utilities.h>
+#if 0
+#include <unordered_map>
+template<typename K, typename V>
+using map_type = std::unordered_map<K, V>;
+#else
+#include <map>
+template<typename K, typename V>
+using map_type = std::map<K, V>;
+#endif
 
 #include <string>
 #include <typeinfo>
@@ -61,14 +71,18 @@ std::string demangle(const char* name) {
     return name;
 }
 #endif
-std::string demangle(const char* name);
 
 template <class T>
 std::string type(const T& t) {
     return demangle(typeid(t).name());
 }
 
+struct Edge;
+struct Port;
+struct Module;
 unsigned object_counter{0};
+std::vector<std::unique_ptr<Port>> ports;
+std::vector<std::unique_ptr<Edge>> edges;
 
 struct Port {
     std::string const fullname;
@@ -78,14 +92,22 @@ struct Port {
     std::string const type;
     std::string const sig_name;
     std::string const id{fmt::format("{}", ++object_counter)};
+    Module* const module;
+    std::vector<Edge*> edges;
 
-    Port(std::string const& fullname, std::string const& name, sc_core::sc_interface  const* ptr, bool input, std::string const& type, std::string const& sig_name ="")
+    static Port* get(std::string const& fullname, std::string const& name, sc_core::sc_interface  const* ptr, bool input, std::string const& type, Module* module, std::string const& sig_name ="") {
+        ports.emplace_back(new Port(fullname, name, ptr, input, type, module, sig_name));
+        return ports.back().get();
+    }
+protected:
+    Port(std::string const& fullname, std::string const& name, sc_core::sc_interface  const* ptr, bool input, std::string const& type, Module* module, std::string const& sig_name ="")
     : fullname(fullname)
     , name(name)
     , port_if(ptr)
     , input(input)
     , type(type)
     , sig_name(sig_name)
+    , module(module)
     { }
 };
 
@@ -93,17 +115,36 @@ struct Module {
     std::string const fullname;
     std::string const name;
     std::string const type;
-    bool const topModule{false};
     std::string const id{fmt::format("{}", ++object_counter)};
-    std::vector<Module> submodules;
-    std::vector<Port> ports;
+    std::vector<std::unique_ptr<Module>> submodules;
+    Module* const parent;
+    std::vector<Port*> ports;
+    std::vector<Edge*> edges;
 
-    Module(std::string const& fullname, std::string const& name, std::string const& type, bool top)
+    Module(std::string const& fullname, std::string const& name, std::string const& type, Module* parent)
     : fullname(fullname)
     , name(name)
     , type(type)
-    , topModule(top)
+    , parent(parent)
     { }
+};
+
+struct Edge {
+    Port const* srcPort;
+    Port const* tgtPort;
+    std::string const id{fmt::format("{}", ++object_counter)};
+    static Edge* get(Port* srcPort, Port* tgtPort) {
+        edges.emplace_back(new Edge(srcPort, tgtPort));
+        auto myself = edges.back().get();
+        srcPort->edges.push_back(myself);
+        tgtPort->edges.push_back(myself);
+        return myself;
+    }
+protected:
+    explicit Edge(Port* srcPort, Port* tgtPort): srcPort(srcPort), tgtPort(tgtPort){
+        if(id=="1062")
+            std::cout<<"Plumberquatsch";
+    }
 };
 
 const std::unordered_set<std::string> know_entities = {
@@ -131,14 +172,14 @@ std::string operator* (std::string const& str, const unsigned int level) {
 #endif
 #endif
 
-std::vector<std::string> scanModule(sc_core::sc_object const* obj, Module *currentModule, unsigned const level) {
+std::vector<std::string> traverse_hierarchy(sc_core::sc_object const* obj, Module *currentModule, unsigned const level) {
     SCCDEBUG() << indent*level<< obj->name() << "(" << obj->kind() << ")";
     std::string kind{obj->kind()};
     if (kind == "sc_module") {
         if(std::string(obj->basename()).substr(0, 3) == "$$$")
             return {};
         auto* name = obj->name();
-        currentModule->submodules.push_back(Module(name, obj->basename(), type(*obj), false));
+        currentModule->submodules.emplace_back(new Module(name, obj->basename(), type(*obj), currentModule));
         std::unordered_set<std::string> keep_outs;
         for (auto* child : obj->get_child_objects()) {
             const std::string child_name{child->basename()};
@@ -151,23 +192,23 @@ std::vector<std::string> scanModule(sc_core::sc_object const* obj, Module *curre
                 if(it!=std::end(keep_outs))
                     continue;
             }
-            auto ks = scanModule(child, &currentModule->submodules.back(), level+1);
+            auto ks = traverse_hierarchy(child, currentModule->submodules.back().get(), level+1);
             if(ks.size())
                 for(auto& s:ks) keep_outs.insert(s);
         }
     } else if(kind == "sc_clock"){
         auto const* iface = dynamic_cast<sc_core::sc_interface const*>(obj);
-        currentModule->submodules.push_back(Module(obj->name(), obj->basename(), type(*obj), false));
-        currentModule->submodules.back().ports.push_back(
-                Port(std::string(obj->name())+"."+obj->basename(), obj->basename(), iface, false, obj->kind(), obj->basename()));
+        currentModule->submodules.emplace_back(new Module(obj->name(), obj->basename(), type(*obj), currentModule));
+        currentModule->submodules.back()->ports.push_back(
+                Port::get(std::string(obj->name())+"."+obj->basename(), obj->basename(), iface, false, obj->kind(), currentModule, obj->basename()));
 #ifndef NO_TLM_EXTRACT
     } else if(auto const* tptr = dynamic_cast<tlm::tlm_base_socket_if const*>(obj)) {
         auto cat = tptr->get_socket_category();
         bool input = (cat & tlm::TLM_TARGET_SOCKET) == tlm::TLM_TARGET_SOCKET;
-        currentModule->ports.push_back(Port(obj->name(), obj->basename(), input?GET_EXPORT_IF(tptr):GET_PORT_IF(tptr), input, obj->kind()));
+        currentModule->ports.push_back(Port::get(obj->name(), obj->basename(), input?GET_EXPORT_IF(tptr):GET_PORT_IF(tptr), input, obj->kind(), currentModule));
         return {
             std::string(obj->basename())+"_port", std::string(obj->basename())+"_export",
-            std::string(obj->basename())+"_port_0", std::string(obj->basename())+"_export_0"
+                    std::string(obj->basename())+"_port_0", std::string(obj->basename())+"_export_0"
         };
 #endif
     } else if (auto const* optr = dynamic_cast<sc_core::sc_port_base const*>(obj)) {
@@ -176,12 +217,12 @@ std::vector<std::string> scanModule(sc_core::sc_object const* obj, Module *curre
             sc_core::sc_prim_channel const* if_obj = dynamic_cast<sc_core::sc_prim_channel const*>(if_ptr);
             bool is_input = kind == "sc_in" || kind == "sc_fifo_in";
             currentModule->ports.push_back(
-                    Port(obj->name(), obj->basename(), if_ptr, is_input, obj->kind(), if_obj?if_obj->basename():""));
+                    Port::get(obj->name(), obj->basename(), if_ptr, is_input, obj->kind(), currentModule, if_obj?if_obj->basename():""));
         }
     } else if (auto const* optr = dynamic_cast<sc_core::sc_export_base const*>(obj)) {
         if(std::string(optr->basename()).substr(0, 3)!="$$$") {
             sc_core::sc_interface const* pointer = optr->get_interface();
-            currentModule->ports.push_back(Port(obj->name(), obj->basename(), pointer, true, obj->kind()));
+            currentModule->ports.push_back(Port::get(obj->name(), obj->basename(), pointer, true, obj->kind(), currentModule));
         }
     } else if (know_entities.find(std::string(obj->kind())) == know_entities.end()) {
         SCCWARN() << "object not known (" << std::string(obj->kind()) << ")";
@@ -189,45 +230,176 @@ std::vector<std::string> scanModule(sc_core::sc_object const* obj, Module *curre
     return {};
 }
 
-void generateElk(std::ostream& e, Module const& module, unsigned level=0) {
-    SCCDEBUG() << module.name;
+void extract_edges(Module* module){
+    for (auto& m : module->submodules)
+        extract_edges(m.get());
+    // Draw edges module <-> submodule:
+    for (auto srcport : module->ports)
+        if(srcport->port_if)
+            for (auto& tgtmod : module->submodules)
+                for (auto tgtport : tgtmod->ports)
+                    if (tgtport->port_if == srcport->port_if)
+                        module->edges.push_back(Edge::get(srcport, tgtport));
+    // Draw edges submodule -> submodule:
+    for (auto& srcmod : module->submodules)
+        for (auto srcport : srcmod->ports)
+            if(!srcport->input && srcport->port_if)
+                for (auto& tgtmod : module->submodules)
+                    for (auto tgtport : tgtmod->ports) {
+                        if(srcmod->fullname == tgtmod->fullname && tgtport->fullname == srcport->fullname)
+                            continue;
+                        if (tgtport->port_if == srcport->port_if && tgtport->input)
+                            module->edges.push_back(Edge::get(srcport, tgtport));
+                    }
+}
+
+void collect_open_ports(Module* module, map_type<sc_core::sc_interface const*, std::vector<Port*>>& port_by_if, map_type<std::string, Module*>& module_by_name){
+    module_by_name[module->fullname]=module;
+    for (auto& m : module->submodules)
+        collect_open_ports(m.get(), port_by_if, module_by_name);
+    for(auto p : module->ports) {
+        if(p->edges.empty())
+            port_by_if[p->port_if].push_back(p);
+    }
+}
+
+void connect_ports(std::vector<Port*>& ports, map_type<std::string, Module*> module_by_name) {
+    std::vector<Port*> tgtports;
+    std::vector<Port*> srcports;
+    std::copy_if(std::begin(ports), std::end(ports), std::back_inserter(tgtports), [](Port*p ){ return p->input;});
+    std::copy_if(std::begin(ports), std::end(ports), std::back_inserter(srcports), [](Port*p ){ return !p->input;});
+    if(srcports.size()!=1) return;
+    auto srcport = srcports[0];
+    auto src_mod = srcport->module;
+    auto src_mod_hier = util::split(src_mod->fullname, '.');
+    for(auto tgtport:tgtports){
+        auto tgt_mod = tgtport->module;
+        auto tgt_mod_hier = util::split(tgt_mod->fullname, '.');
+        size_t common_depth=0;
+        for(; common_depth<std::min(src_mod_hier.size(), tgt_mod_hier.size()) && src_mod_hier[common_depth] == tgt_mod_hier[common_depth]; ++common_depth);
+        auto common_mod_hier_name = util::join(std::vector<std::string>(tgt_mod_hier.begin(), tgt_mod_hier.begin() + common_depth), ".");
+        auto common_it = module_by_name.find(common_mod_hier_name);
+        assert(common_it!=module_by_name.end());
+        auto common_mod=common_it->second;
+        // infer src port from srcport's module upwards if needed
+        auto cur_src_port = srcport;
+        if(src_mod!=common_mod) {
+            auto cur_parent_mod = src_mod->parent;
+            while(cur_parent_mod != common_mod){
+                auto it = std::find_if(cur_parent_mod->ports.begin(), cur_parent_mod->ports.end(), [srcport](Port const* p){
+                    return srcport->port_if == p->port_if;
+                });
+                if(it == cur_parent_mod->ports.end()) {
+
+                    cur_parent_mod->ports.push_back(Port::get(cur_parent_mod->fullname+"."+srcport->name, srcport->name,
+                            srcport->port_if, srcport->input, srcport->type, cur_parent_mod, srcport->sig_name));
+                    cur_parent_mod->edges.push_back(Edge::get(cur_src_port, cur_parent_mod->ports.back()));
+                    cur_src_port=cur_parent_mod->ports.back();
+                } else {
+                    cur_src_port=*it;
+                }
+                cur_parent_mod=cur_parent_mod->parent;
+            }
+        }
+        // infer tgt ports from tgtport's module upwards if needed
+        auto cur_tgt_port = tgtport;
+        if(tgt_mod!=common_mod) {
+            auto cur_parent_mod = tgt_mod->parent;
+            while(cur_parent_mod != common_mod){
+                auto it = std::find_if(cur_parent_mod->ports.begin(), cur_parent_mod->ports.end(), [tgtport](Port const* p){
+                    return tgtport->port_if == p->port_if;
+                });
+                if(it == cur_parent_mod->ports.end()) {
+                    cur_parent_mod->ports.push_back(Port::get(cur_parent_mod->fullname+"."+tgtport->name, tgtport->name,
+                            tgtport->port_if, tgtport->input, tgtport->type, cur_parent_mod, tgtport->sig_name));
+                    cur_parent_mod->edges.push_back(Edge::get(cur_tgt_port, cur_parent_mod->ports.back()));
+                    cur_tgt_port=cur_parent_mod->ports.back();
+                } else {
+                    cur_tgt_port=*it;
+                }
+                cur_parent_mod=cur_parent_mod->parent;
+            }
+        }
+        // connect the topmost port if not already done
+        auto it = std::find_if(common_mod->edges.begin(), common_mod->edges.end(), [cur_src_port, cur_tgt_port](Edge const* e){
+           return e->srcPort==cur_src_port && e->tgtPort==cur_tgt_port;
+        });
+        if(it==common_mod->edges.end()){
+            common_it->second->edges.push_back(Edge::get(cur_src_port, cur_tgt_port));
+        } else {
+            cur_src_port->edges.push_back(*it);
+            cur_tgt_port->edges.push_back(*it);
+        }
+    }
+}
+
+std::unique_ptr<Module> extract_hierarchy() {
+    std::vector<sc_core::sc_object*> obj = sc_core::sc_get_top_level_objects();
+    std::vector<sc_core::sc_object*> valid_mods;
+    std::copy_if(std::begin(obj), std::end(obj), std::back_inserter(valid_mods), [](sc_core::sc_object* p ){
+        return std::string(p->kind()) == "sc_module" && std::string(p->basename()).substr(0, 3) != "$$$";
+    });
+    std::unique_ptr<Module> ret;
+    if (valid_mods.size() == 1) {
+        SCCDEBUG() << valid_mods[0]->name() << "(" << valid_mods[0]->kind() << ")";
+        ret = scc::make_unique<Module>(valid_mods[0]->name(), valid_mods[0]->basename(), type(*valid_mods[0]), nullptr);
+        for (auto *child : valid_mods[0]->get_child_objects())
+            traverse_hierarchy(child, ret.get(), 1);
+    } else if (valid_mods.size() > 1) {
+        SCCDEBUG() << "sc_main ( function sc_main() )";
+        ret = scc::make_unique<Module>(Module("sc_main", "sc_main", "sc_main()", nullptr));
+        for (auto *child : valid_mods)
+            traverse_hierarchy(child, ret.get(), 1);
+    }
+    extract_edges(ret.get());
+    map_type<sc_core::sc_interface const*, std::vector<Port*>> port_by_if;
+    map_type<std::string, Module*> module_by_name;
+    collect_open_ports(ret.get(), port_by_if, module_by_name);
+    for(auto& p:port_by_if) {
+        connect_ports(std::get<1>(p), module_by_name);
+    }
+    return ret;
+}
+
+void generateElk(std::ostream& e, Module const* module, unsigned level=0) {
+    SCCDEBUG() << module->name;
     unsigned num_in{0}, num_out{0};
-    for (auto port : module.ports) if(port.input) num_in++; else num_out++;
-    if(!module.ports.size() && !module.submodules.size()) return;
-    e << indent*level << "node " << module.name << " {" << "\n";
+    for (auto port : module->ports) if(port->input) num_in++; else num_out++;
+    if(!module->ports.size() && !module->submodules.size()) return;
+    e << indent*level << "node " << module->name << " {" << "\n";
     level++;
     e << indent*level << "layout [ size: 50, "<<std::max(80U, std::max(num_in, num_out)*20)<<" ]\n";
     e << indent*level << "portConstraints: FIXED_SIDE\n";
-    e << indent*level << "label \"" << module.name << "\"\n";
+    e << indent*level << "label \"" << module->name << "\"\n";
 
-    for (auto port : module.ports) {
-        SCCDEBUG() << "    " << port.name << "\n";
-        auto side = port.input?"WEST":"EAST";
-        e << indent*level << "port " << port.name << " { ^port.side: "<<side<<" label '" << port.name<< "' }\n";
+    for (auto port : module->ports) {
+        SCCDEBUG() << "    " << port->name << "\n";
+        auto side = port->input?"WEST":"EAST";
+        e << indent*level << "port " << port->name << " { ^port.side: "<<side<<" label '" << port->name<< "' }\n";
     }
 
-    for (auto m : module.submodules)
-        generateElk(e, m, level);
+    for (auto& m : module->submodules)
+        generateElk(e, m.get(), level);
     // Draw edges module <-> submodule:
-    for (auto srcport : module.ports) {
-        if(srcport.port_if)
-            for (auto tgtmod : module.submodules) {
-                for (auto tgtport : tgtmod.ports) {
-                    if (tgtport.port_if == srcport.port_if)
-                        e << indent*level << "edge " << srcport.fullname << " -> " << tgtport.fullname << "\n";
+    for (auto srcport : module->ports) {
+        if(srcport->port_if)
+            for (auto& tgtmod : module->submodules) {
+                for (auto tgtport : tgtmod->ports) {
+                    if (tgtport->port_if == srcport->port_if)
+                        e << indent*level << "edge " << srcport->fullname << " -> " << tgtport->fullname << "\n";
                 }
             }
     }
     // Draw edges submodule -> submodule:
-    for (auto srcmod : module.submodules) {
-        for (auto srcport : srcmod.ports) {
-            if(!srcport.input && srcport.port_if)
-                for (auto tgtmod : module.submodules) {
-                    for (auto tgtport : tgtmod.ports) {
-                        if(srcmod.fullname == tgtmod.fullname && tgtport.fullname == srcport.fullname)
+    for (auto& srcmod : module->submodules) {
+        for (auto srcport : srcmod->ports) {
+            if(!srcport->input && srcport->port_if)
+                for (auto& tgtmod : module->submodules) {
+                    for (auto tgtport : tgtmod->ports) {
+                        if(srcmod->fullname == tgtmod->fullname && tgtport->fullname == srcport->fullname)
                             continue;
-                        if (tgtport.port_if == srcport.port_if && tgtport.input)
-                            e << indent*level << "edge " << srcport.fullname << " -> " << tgtport.fullname << "\n";
+                        if (tgtport->port_if == srcport->port_if && tgtport->input)
+                            e << indent*level << "edge " << srcport->fullname << " -> " << tgtport->fullname << "\n";
                     }
                 }
         }
@@ -285,21 +457,20 @@ void generateEdgeJson(writer_type &writer, const scc::Port &srcport, const scc::
     } writer.EndObject();
 }
 
-void generateEdgeD3Json(writer_type &writer, const scc::Module &srcmod, const scc::Port &srcport, const scc::Module &tgtmod, const scc::Port &tgtport) {
+void generateEdgeD3Json(writer_type &writer, const scc::Edge & edge){
     writer.StartObject(); {
-        auto edge_name = fmt::format("{}", ++object_counter);
-        writer.Key("id"); writer.String(edge_name.c_str());
-        writer.Key("source");writer.String(srcmod.id.c_str());
-        writer.Key("sourcePort");writer.String(srcport.id.c_str());
-        writer.Key("target");writer.String(tgtmod.id.c_str());
-        writer.Key("targetPort");writer.String(tgtport.id.c_str());
+        writer.Key("id"); writer.String(edge.id.c_str());
+        writer.Key("source");writer.String(edge.srcPort->module->id.c_str());
+        writer.Key("sourcePort");writer.String(edge.srcPort->id.c_str());
+        writer.Key("target");writer.String(edge.tgtPort->module->id.c_str());
+        writer.Key("targetPort");writer.String(edge.tgtPort->id.c_str());
         writer.Key("hwMeta"); writer.StartObject(); {
-            if(srcport.sig_name.size()) {
-                writer.Key("name"); writer.String(srcport.sig_name.c_str());
-            } else if(tgtport.sig_name.size()) {
-                writer.Key("name"); writer.String(tgtport.sig_name.c_str());
+            if(edge.srcPort->sig_name.size()) {
+                writer.Key("name"); writer.String(edge.srcPort->sig_name.c_str());
+            } else if(edge.tgtPort->sig_name.size()) {
+                writer.Key("name"); writer.String(edge.tgtPort->sig_name.c_str());
             } else {
-                writer.Key("name"); writer.String(fmt::format("{}_to_{}", srcport.name, tgtport.name).c_str());
+                writer.Key("name"); writer.String(fmt::format("[{}->{}]", edge.srcPort->name, edge.tgtPort->name).c_str());
             }
             // writer.Key("cssClass"); writer.String("link-style0");
             // writer.Key("cssStyle"); writer.String("stroke:red");
@@ -309,68 +480,26 @@ void generateEdgeD3Json(writer_type &writer, const scc::Module &srcmod, const sc
 
 void generateModJson(writer_type& writer, hierarchy_dumper::file_type type, Module const& module, unsigned level=0) {
     unsigned num_in{0}, num_out{0};
-    for (auto port : module.ports) if(port.input) num_in++; else num_out++;
+    for (auto port : module.ports) if(port->input) num_in++; else num_out++;
     writer.StartObject(); {
         writer.Key("id"); writer.String(module.id.c_str());
         // process ports
         writer.Key("ports"); writer.StartArray(); {
-            for(auto& p: module.ports) generatePortJson(writer, type, p);
+            for(auto& p: module.ports) generatePortJson(writer, type, *p);
         } writer.EndArray();
         // process modules
-        if(type==hierarchy_dumper::D3JSON && !module.topModule) writer.Key("_children"); else
-        writer.Key("children"); writer.StartArray(); {
-            for(auto& c: module.submodules) generateModJson(writer, type, c, level*1);
+        if(type==hierarchy_dumper::D3JSON && !module.parent) writer.Key("_children"); else
+            writer.Key("children"); writer.StartArray(); {
+            for(auto& c: module.submodules) generateModJson(writer, type, *c, level*1);
         } writer.EndArray();
         // process connections
-        if(type==hierarchy_dumper::D3JSON && !module.topModule) writer.Key("_edges"); else
-        writer.Key("edges"); writer.StartArray(); {
-            // Draw edges module <-> submodule:
-            for (auto srcport : module.ports) {
-                if(srcport.port_if) {
-                    for (auto tgtmod : module.submodules) {
-                        for (auto tgtport : tgtmod.ports) {
-                            if (tgtport.port_if == srcport.port_if)
-                                if(type == hierarchy_dumper::D3JSON)
-                                    generateEdgeD3Json(writer, module, srcport, tgtmod, tgtport);
-                                else
-                                    generateEdgeJson(writer, srcport, tgtport);
-                        }
-                    }
+        if(type == hierarchy_dumper::D3JSON) {
+            if(!module.parent) writer.Key("_edges"); else
+            writer.Key("edges"); writer.StartArray(); {
+                for(auto& e: module.edges) {
+                    generateEdgeD3Json(writer, *e);
                 }
-            }
-            // Draw edges submodule -> submodule:
-            for (auto srcmod : module.submodules) {
-                for (auto srcport : srcmod.ports) {
-                    if(!srcport.input && srcport.port_if) {
-                        for (auto tgtmod : module.submodules) {
-                            for (auto tgtport : tgtmod.ports) {
-                                if(srcmod.fullname == tgtmod.fullname && tgtport.fullname == srcport.fullname)
-                                    continue;
-                                if (tgtport.port_if == srcport.port_if && tgtport.input)
-                                    if(type == hierarchy_dumper::D3JSON)
-                                        generateEdgeD3Json(writer, srcmod, srcport, tgtmod, tgtport);
-                                    else
-                                        generateEdgeJson(writer, srcport, tgtport);
-                            }
-                        }
-                    }
-                }
-            }
-        } writer.EndArray();
-        if(type != hierarchy_dumper::D3JSON) {
-            writer.Key("labels"); writer.StartArray(); {
-                writer.StartObject(); {
-                    writer.Key("text"); writer.String(module.name.c_str());
-                } writer.EndObject();
             } writer.EndArray();
-            writer.Key("width"); writer.Uint(50);
-            writer.Key("height"); writer.Uint(std::max(80U, std::max(num_in, num_out)*20));
-            if(type == hierarchy_dumper::DBGJSON) {
-                writer.Key("name"); writer.String(module.name.c_str());
-                writer.Key("type"); writer.String(module.type.c_str());
-                writer.Key("topmodule"); writer.Bool(module.topModule);
-            }
-        } else {
             writer.Key("hwMeta"); writer.StartObject(); {
                 writer.Key("name"); writer.String(module.name.c_str());
                 writer.Key("cls"); writer.String(module.type.c_str());
@@ -384,29 +513,34 @@ void generateModJson(writer_type& writer, hierarchy_dumper::file_type type, Modu
                 writer.Key("org.eclipse.elk.layered.mergeEdges");  writer.Uint(1);
                 writer.Key("org.eclipse.elk.portConstraints"); writer.String("FIXED_SIDE");
             } writer.EndObject();
+        } else {
+            writer.Key("edges"); writer.StartArray(); {
+                for(auto& e: module.edges) {
+                    generateEdgeJson(writer, *e->srcPort, *e->tgtPort);
+                }
+            } writer.EndArray();
+            writer.Key("labels"); writer.StartArray(); {
+                writer.StartObject(); {
+                    writer.Key("text"); writer.String(module.name.c_str());
+                } writer.EndObject();
+            } writer.EndArray();
+            writer.Key("width"); writer.Uint(50);
+            writer.Key("height"); writer.Uint(std::max(80U, std::max(num_in, num_out)*20));
+            if(type == hierarchy_dumper::DBGJSON) {
+                writer.Key("name"); writer.String(module.name.c_str());
+                writer.Key("type"); writer.String(module.type.c_str());
+                writer.Key("topmodule"); writer.Bool(module.parent);
+            }
         }
     } writer.EndObject();
 }
 
 void dump_structure(std::ostream& e, hierarchy_dumper::file_type format) {
-    std::vector<Module> topModules;
-    std::vector<sc_core::sc_object*> obja = sc_core::sc_get_top_level_objects();
-    if(obja.size()==1 && std::string(obja[0]->kind()) == "sc_module" && std::string(obja[0]->basename()).substr(0, 3) != "$$$") {
-        SCCDEBUG() << obja[0]->name() << "(" << obja[0]->kind() << ")";
-        topModules.push_back(Module(obja[0]->name(), obja[0]->basename(), type(*obja[0]), true));
-        for (auto* child : obja[0]->get_child_objects())
-            scanModule(child, &topModules.back(), 1);
-    } else if(obja.size()>1) {
-        SCCDEBUG() << "sc_main ( function sc_main() )";
-        topModules.push_back(Module("sc_main", "sc_main", "sc_main()", true));
-        for (auto* child : obja)
-            scanModule(child, &topModules.back(), 1);
-    }
+    auto top_mod = extract_hierarchy();
     if(format == hierarchy_dumper::ELKT) {
         e<<"algorithm: org.eclipse.elk.layered\n";
         e<<"edgeRouting: ORTHOGONAL\n";
-        for (auto module : topModules)
-            generateElk(e, module);
+        generateElk(e, top_mod.get());
         SCCINFO() << "SystemC Structure Dumped to ELK file";
     } else {
         OStreamWrapper stream(e);
@@ -423,7 +557,7 @@ void dump_structure(std::ostream& e, hierarchy_dumper::file_type format) {
                 writer.Key("algorithm"); writer.String("layered");
             } writer.EndObject();
             writer.Key("children"); writer.StartArray(); {
-                for(auto& c:topModules) generateModJson(writer, format, c);
+                generateModJson(writer, format, *top_mod.get());
             } writer.EndArray();
             writer.Key("edges");writer.StartArray();
             writer.EndArray();
