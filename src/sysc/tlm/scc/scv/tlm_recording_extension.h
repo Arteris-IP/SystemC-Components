@@ -24,6 +24,7 @@
 #include <scv-tr.h>
 #endif
 #include <tlm>
+#include <util/pool_allocator.h>
 
 //! @brief SystemC TLM
 namespace tlm {
@@ -95,6 +96,13 @@ public:
      */
     SCVNS scv_tr_handle txHandle;
 
+    void * operator new(size_t size) {
+      return static_cast<tlm_recording_extension*>(util::pool_allocator<sizeof(tlm_recording_extension)>::get().allocate());
+    }
+
+    void operator delete(void * p) {
+        util::pool_allocator<sizeof(tlm_recording_extension)>::get().free(p);
+    }
 private:
     //! the owner of this transaction
     void* creator;

@@ -59,6 +59,13 @@ struct link_pred_ext : public tlm::tlm_extension<link_pred_ext> {
 	link_pred_ext(tx_handle handle, void const* creator_) : txHandle(handle), creator(creator_) {}
 	tx_handle txHandle;
 	void const* creator;
+    void * operator new(size_t size) {
+      return static_cast<link_pred_ext*>(util::pool_allocator<sizeof(link_pred_ext)>::get().allocate());
+    }
+
+    void operator delete(void * p) {
+        util::pool_allocator<sizeof(link_pred_ext)>::get().free(p);
+    }
 };
 
 struct nb_rec_entry {

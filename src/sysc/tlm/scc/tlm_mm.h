@@ -129,26 +129,6 @@ tlm::scc::tlm_gp_mm::add_data_ptr(size_t sz, typename TYPES::tlm_payload_type* g
         gp->set_byte_enable_length(sz);
     return gp;
 }
-
-template <typename EXT> struct tlm_ext_mm : public EXT {
-
-    friend tlm_gp_mm;
-
-    ~tlm_ext_mm() {}
-
-    void free() override { util::pool_allocator<sizeof(tlm_ext_mm<EXT>)>::get().free(this); }
-
-    EXT* clone() const override { return create(*this); }
-
-    template <typename... Args> static EXT* create(Args... args) {
-        return new(util::pool_allocator<sizeof(tlm_ext_mm<EXT>)>::get().allocate()) tlm_ext_mm<EXT>(args...);
-    }
-
-protected:
-    template <typename... Args>
-    tlm_ext_mm(Args... args)
-    : EXT(args...) {}
-};
 /**
  * @class tlm_mm
  * @brief a tlm memory manager
@@ -205,7 +185,7 @@ public:
      */
     template <typename PEXT> payload_type* allocate(size_t sz, bool be = false) {
         auto* ptr = allocate(sz, be);
-        ptr->set_auto_extension(tlm_ext_mm<PEXT>::create());
+        ptr->set_auto_extension(new PEXT);
         return ptr;
     }
     /**

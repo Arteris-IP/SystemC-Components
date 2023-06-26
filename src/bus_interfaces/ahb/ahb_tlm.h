@@ -20,6 +20,7 @@
 #include <array>
 #include <cstdint>
 #include <tlm>
+#include <util/pool_allocator.h>
 
 //! TLM2.0 components modeling AHB
 namespace ahb {
@@ -76,6 +77,14 @@ struct ahb_extension : public tlm::tlm_extension<ahb_extension> {
      * @param ext
      */
     void copy_from(tlm::tlm_extension_base const& ext) override;
+
+    void * operator new(size_t size) {
+      return static_cast<ahb_extension*>(util::pool_allocator<sizeof(ahb_extension)>::get().allocate());
+    }
+
+    void operator delete(void * p) {
+        util::pool_allocator<sizeof(ahb_extension)>::get().free(p);
+    }
 
 private:
     enum { INSTR = 1, PRIV = 2, BUFFERABLE = 4, CACHABLE = 8 };

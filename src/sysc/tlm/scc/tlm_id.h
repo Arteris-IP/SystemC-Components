@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include "tlm_gp_shared.h"
+#include <util/pool_allocator.h>
 
 //! @brief SystemC TLM
 namespace tlm {
@@ -37,6 +38,13 @@ struct tlm_id_extension : public tlm_extension<tlm_id_extension> {
     tlm_id_extension(uintptr_t i)
     : id(i) {}
     uintptr_t id;
+    void * operator new(size_t size) {
+      return static_cast<tlm_id_extension*>(util::pool_allocator<sizeof(tlm_id_extension)>::get().allocate());
+    }
+
+    void operator delete(void * p) {
+        util::pool_allocator<sizeof(tlm_id_extension)>::get().free(p);
+    }
 };
 
 inline uintptr_t getId(tlm::tlm_generic_payload& gp) {

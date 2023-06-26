@@ -20,6 +20,7 @@
 #include <array>
 #include <cstdint>
 #include <tlm>
+#include <util/pool_allocator.h>
 
 //! TLM2.0 components modeling OBI
 namespace obi {
@@ -49,6 +50,13 @@ struct obi_extension : public tlm::tlm_extension<obi_extension> {
      */
     void copy_from(tlm::tlm_extension_base const& ext) override;
 
+    void * operator new(size_t size) {
+      return static_cast<obi_extension*>(util::pool_allocator<sizeof(obi_extension)>::get().allocate());
+    }
+
+    void operator delete(void * p) {
+        util::pool_allocator<sizeof(obi_extension)>::get().free(p);
+    }
 private:
     uint32_t id{0};
     uint32_t auser{0};
