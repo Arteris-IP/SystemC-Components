@@ -111,21 +111,21 @@ struct tracer_base : public sc_core::sc_module {
      *
      * @param t
      */
-    void set_trace_types(trace_types t) { types_to_trace = t; }
+    void set_trace_types(trace_types t);
     /**
      * @fn const sc_core::sc_trace_file* get_trace_file()const
      * @brief get the tracefile used by this tracer
      *
      * @return the tracefile
      */
-    const sc_core::sc_trace_file* get_trace_file() const { return trf; }
+    const sc_core::sc_trace_file* get_trace_file() const;
     /**
      * @fn const sc_core::sc_trace_file* get_trace_file()const
      * @brief get the tracefile used by this tracer
      *
      * @return the tracefile
      */
-    sc_core::sc_trace_file* get_trace_file() { return trf; }
+    sc_core::sc_trace_file* get_trace_file();
     /**
      * @fn void set_trace_file(sc_core::sc_trace_file*)
      * @brief set the trace file of this tracer
@@ -133,7 +133,7 @@ struct tracer_base : public sc_core::sc_module {
      * The provided file is not owned by the tracer. Hence the caller is responsible for closing the tracefile
      * @param trf
      */
-    void set_trace_file(sc_core::sc_trace_file* trf) { this->trf = trf; }
+    void set_trace_file(sc_core::sc_trace_file *trf);
 
     static void set_default_trace_enable(bool);
 

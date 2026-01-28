@@ -328,6 +328,22 @@ bool tracer_base::get_default_trace_enable() {
         return false; // if the parameter does not exist, no tracer has been instantiated
 }
 
+void tracer_base::set_trace_types(trace_types t) {
+    types_to_trace = t;
+}
+
+const sc_core::sc_trace_file* tracer_base::get_trace_file() const {
+    return trf;
+}
+
+sc_core::sc_trace_file* tracer_base::get_trace_file() {
+    return trf;
+}
+
+void tracer_base::set_trace_file(sc_core::sc_trace_file *trf) {
+    this->trf = trf;
+}
+
 void tracer_base::set_default_trace_enable(bool v) {
     auto cci_broker = cci::cci_get_broker();
     auto default_trace_enable_handle = cci_broker.get_param_handle(default_trace_enable_name);

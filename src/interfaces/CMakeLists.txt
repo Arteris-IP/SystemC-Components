@@ -1,5 +1,7 @@
 project(interfaces VERSION 0.0.1 LANGUAGES CXX)
 
+find_package(fmt REQUIRED)
+
 set(LIB_SOURCES
 	apb/apb_tlm.cpp
 	ahb/ahb_tlm.cpp
@@ -26,7 +28,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC tlm-interfaces)
 target_link_libraries(${PROJECT_NAME} PRIVATE scc-sysc)
-
+if(TARGET fmt::fmt-header-only)
+	target_link_libraries(${PROJECT_NAME} PRIVATE fmt::fmt-header-only)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE fmt::fmt)
+endif()
 if(CLANG_TIDY_EXE)
     set_target_properties(${PROJECT_NAME} PROPERTIES CXX_CLANG_TIDY "${DO_CLANG_TIDY}" )
 endif() 
