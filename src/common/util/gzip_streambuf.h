@@ -49,7 +49,8 @@ class gzip_stream : public std::istream {
 public:
     gzip_stream() = delete;
     explicit gzip_stream(const std::string& path)
-    : buf_(path) {
+    : std::istream(nullptr)  /* std::istream has no default ctor */
+    , buf_(path) {
         rdbuf(&buf_);
     }
 

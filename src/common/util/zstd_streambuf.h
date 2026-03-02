@@ -51,7 +51,8 @@ class zstd_stream : public std::istream {
 public:
     zstd_stream() = delete;
     explicit zstd_stream(const std::string& path)
-    : buf_(path) {
+    : std::istream(nullptr)  /* initialize base before using rdbuf */
+    , buf_(path) {
         rdbuf(&buf_);
     }
 
