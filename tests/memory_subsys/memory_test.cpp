@@ -69,7 +69,7 @@ TEST_CASE("dmi_access", "[memory][tlm-level]") {
 
 TEST_CASE("page_boundary_check", "[memory][tlm-level]") {
     auto& dut = factory::get<testbench>();
-    constexpr uint64_t kPageSize = dut.mem3.getPageSize();
+    uint64_t kPageSize = dut.mem3.getPageSize();
 
     std::array<uint8_t, 2> write_data{{0xAAu, 0xBBu}};
     tlm::tlm_generic_payload write;
